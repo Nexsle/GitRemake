@@ -4,6 +4,9 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import org.ini4j.Ini;
 
 public class GitRepository {
@@ -58,11 +61,12 @@ public class GitRepository {
 
   // Make a path to the repository's .git directory
   private String repoPath(String... paths) {
-    String resultPath = this.gitdir;
+    // String resultPath = this.gitdir;
+    Path result = Paths.get(this.gitdir);
     for (String path : paths) {
-      resultPath = resultPath + File.separator + path;
+      result = result.resolve(path);
     }
-    return resultPath;
+    return result.toString();
   }
 
   private String repoDir(boolean mkdir, String... paths) {
@@ -103,11 +107,11 @@ public class GitRepository {
     System.arraycopy(paths, 0, filePath, 0, paths.length - 1);
 
     // check if the path exists
-    if (repoDir(mkdir, paths) != null) {
-      return repoPath(paths);
+    if (repoDir(mkdir, filePath) == null) {
+      return null;
     }
 
-    return null;
+    return repoPath(paths);
   }
 
   /**
@@ -142,6 +146,8 @@ public class GitRepository {
     try (FileWriter writer = new FileWriter(repo.repoFile(true, "description"))) {
       writer.write("Unnamed repository; edit this file 'description' to name the repository.\n");
     } catch (IOException e) {
+      System.err.println("Error: " + e.getMessage());
+      e.printStackTrace();
       throw new RuntimeException("Failed to create description file", e);
     }
 
@@ -168,5 +174,34 @@ public class GitRepository {
     config.put("core", "bare", "false");
 
     return config;
+  }
+
+  private GitRepository repoFind() {
+    return repoFind(".");
+  }
+
+  private GitRepository repoFind(String path) {
+    return repoFind(path, true);
+  }
+
+  private GitRepository repoFind(String path, boolean required) {
+    Path searchPath = Paths.get(path);
+    // check if we have reached the .git
+    if (Files.isDirectory(searchPath.resolve(".git"))) {
+      return new GitRepository(path, false);
+    }
+
+    Path parent = searchPath.getParent();
+
+    if (parent == null) {
+      // means theres no more parent
+      // for this path
+      if (required) {
+        throw new IllegalArgumentException("No git directory.");
+      } else {
+        return null;
+      }
+    }
+    return repoFind(parent.toString(), required);
   }
 }
