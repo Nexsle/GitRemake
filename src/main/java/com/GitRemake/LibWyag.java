@@ -1,5 +1,11 @@
 package com.GitRemake;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import org.apache.commons.cli.*;
 import org.apache.commons.cli.Options;
 import org.ini4j.*;
@@ -104,13 +110,93 @@ public class LibWyag {
   }
 
   private static void cmdLog(String[] commandArgs) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'cmdLog'");
+    String startCommit = commandArgs.length > 0 ? commandArgs[0] : "HEAD";
+
+    GitRepository repo = GitRepository.repoFind();
+
+    // Start the Graphviz output
+    System.out.println("digraph wyaglog{");
+    System.out.println(" node[shape=rect]");
+
+    // Track which commit we've seen
+    Set<String> seen = new HashSet<>();
+
+    logGraphviz(repo, GitObjectUtil.objectFind(repo, startCommit), seen);
+
+    System.out.println("}");
   }
 
   private static void cmdHashObject(String[] commandArgs) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'cmdHashvoid'");
+    Options options = new Options();
+    options.addOption(
+        Option.builder("t")
+            .longOpt("type")
+            .hasArgs()
+            .desc("Specify the object type (blob, commit, tag, tree)")
+            .required(true)
+            .build());
+
+    options.addOption(
+        Option.builder("w")
+            .longOpt("write")
+            .desc("Actually write the object into the repository")
+            .required(true)
+            .build());
+
+    CommandLineParser parser = new DefaultParser();
+    HelpFormatter helper = new HelpFormatter();
+
+    try {
+      CommandLine cmd = parser.parse(options, commandArgs);
+      // Get the file name behind the options
+      String[] remainingArgs = cmd.getArgs();
+      // make sure that user enter a file name
+      if (remainingArgs.length == 0) {
+        System.err.println("Error: No file name specified");
+        helper.printHelp("wyag hash-object [-w] [-t TYPE] FILE", options);
+        System.exit(1);
+      }
+      // get the path and type
+      String filePath = remainingArgs[0];
+      String type = cmd.getOptionValue("t", "blob");
+
+      // read file
+      byte[] fileContents;
+      try {
+        fileContents = Files.readAllBytes(Paths.get(filePath));
+      } catch (IOException e) {
+        System.err.println("Error reading file: " + filePath);
+        System.exit(1);
+        return;
+      }
+
+      GitObject gitObject;
+      try {
+        gitObject = GitObjectUtil.createObject(type, fileContents);
+      } catch (IllegalArgumentException e) {
+        System.err.println("Error: " + e.getMessage());
+        System.exit(1);
+        return;
+      }
+
+      GitRepository repo = null;
+      if (cmd.hasOption("w")) {
+        repo = GitRepository.repoFind();
+      }
+
+      String hash = GitObjectUtil.objectWrite(repo, gitObject);
+
+      System.out.println(hash);
+
+    } catch (ParseException e) {
+      System.err.println("Error parsing arguments: " + e.getMessage());
+      helper.printHelp("wyag hash-object [-w] [-t TYPE] FILE", options);
+      System.exit(1);
+    } catch (Exception e) {
+      System.err.println("Error: " + e.getMessage());
+      e.printStackTrace();
+      System.exit(1);
+    }
   }
 
   private static void cmdCheckIgnore(String[] commandArgs) {
@@ -119,12 +205,104 @@ public class LibWyag {
   }
 
   private static void cmdCatFile(String[] commandArgs) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'cmdCatFile'");
+    Options options = new Options();
+    // add the type option
+    options.addOption(
+        Option.builder("t")
+            .longOpt("type")
+            .hasArgs()
+            .desc("Specify the object type (blob, commit, tag, tree)")
+            .required(true)
+            .build());
+
+    CommandLineParser parser = new DefaultParser();
+    HelpFormatter helper = new HelpFormatter();
+
+    try {
+      CommandLine cmd = parser.parse(options, commandArgs);
+      // Get the input behind the -type option
+      String[] remainingArgs = cmd.getArgs();
+      // check if user enter any thing
+      if (remainingArgs.length == 0) {
+        System.err.println("Error: no object type specified");
+        helper.printHelp("wyag cat-file -t TYPE OBJECT", options);
+        System.exit(1);
+      }
+      // get the value of the option
+      String type = cmd.getOptionValue("t");
+      // get the objectId which is also the hashed value
+      String objectId = remainingArgs[0];
+
+      GitRepository repo = GitRepository.repoFind();
+
+      GitObject object = GitObjectUtil.objectRead(repo, objectId);
+      if (object == null) {
+        System.err.println("Error object not found: " + objectId);
+        System.exit(1);
+      }
+
+      if (!object.getType().equals(type)) {
+        System.err.println("Error: object " + objectId + " is not of the same type " + type);
+        System.exit(1);
+      }
+
+      if (object instanceof GitBlob) {
+        System.out.write(((GitBlob) object).getBlobData());
+      } else {
+        System.out.write(object.serialize());
+      }
+    } catch (ParseException e) {
+      System.err.println("Error parsing arguments: " + e.getMessage());
+      helper.printHelp("wyag cat-file -t TYPE OBJECT", options);
+      System.exit(1);
+    } catch (Exception e) {
+      System.err.println("Error: " + e.getMessage());
+      e.printStackTrace();
+      System.exit(1);
+    }
   }
 
   private static void cmdAdd(String[] commandArgs) {
     // TODO Auto-generated method stub
     throw new UnsupportedOperationException("Unimplemented method 'cmdAdd'");
+  }
+
+  private static void logGraphviz(GitRepository repo, String sha, Set<String> seen) {
+    if (seen.contains(sha)) {
+      return;
+    }
+
+    seen.add(sha);
+
+    GitObject object = GitObjectUtil.objectRead(repo, sha);
+    if (!(object instanceof GitCommit)) {
+      throw new RuntimeException("Error: " + sha + " is not a commit!!");
+    }
+
+    GitCommit commit = (GitCommit) object;
+    String message = commit.getMessage().trim();
+
+    if (message.contains("\n")) {
+      message = message.substring(0, message.indexOf("\n"));
+    }
+
+    message = message.replace("\\", "\\\\").replace("\"", "\\\"");
+
+    System.out.println(" c_" + sha + "[label=\"" + sha.substring(0, 7) + ": " + message + "\"]");
+
+    if (!commit.getType().equals("commit")) {
+      throw new RuntimeException("Error expected commit, got " + commit.getType());
+    }
+
+    List<String> parents = commit.getParent();
+
+    if (parents.isEmpty()) {
+      return;
+    }
+
+    for (String parent : parents) {
+      System.out.println(" c_" + sha + " -> c_" + parent + ";");
+      logGraphviz(repo, parent, seen);
+    }
   }
 }

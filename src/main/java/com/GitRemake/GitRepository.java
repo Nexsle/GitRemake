@@ -92,11 +92,11 @@ public class GitRepository {
   }
 
   // simple method for when repoFile("config");
-  private String repoFile(String... paths) {
+  public String repoFile(String... paths) {
     return repoFile(false, paths);
   }
 
-  private String repoFile(boolean mkdir, String... paths) {
+  public String repoFile(boolean mkdir, String... paths) {
     if (paths.length == 0) {
       return null;
     }
@@ -176,15 +176,15 @@ public class GitRepository {
     return config;
   }
 
-  private GitRepository repoFind() {
+  public static GitRepository repoFind() {
     return repoFind(".");
   }
 
-  private GitRepository repoFind(String path) {
+  public static GitRepository repoFind(String path) {
     return repoFind(path, true);
   }
 
-  private GitRepository repoFind(String path, boolean required) {
+  public static GitRepository repoFind(String path, boolean required) {
     Path searchPath = Paths.get(path);
     // check if we have reached the .git
     if (Files.isDirectory(searchPath.resolve(".git"))) {
