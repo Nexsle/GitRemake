@@ -11,6 +11,10 @@ import java.util.Map;
 public class GitCommit extends GitObject {
   private Map<String, Object> kvlm;
 
+  public GitCommit(byte[] data) {
+    super(data);
+  }
+
   /**
    * Create a new commit with specific properties
    *
