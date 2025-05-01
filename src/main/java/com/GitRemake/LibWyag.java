@@ -1,6 +1,7 @@
 package com.GitRemake;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashSet;
@@ -38,7 +39,7 @@ public class LibWyag {
         case "add" -> cmdAdd(commandArgs);
         case "cat-file" -> cmdCatFile(commandArgs);
         case "check-ignore" -> cmdCheckIgnore(commandArgs);
-        case "checkout" -> cmdCheckIgnore(commandArgs);
+        case "checkout" -> cmdCheckout(commandArgs);
         case "commit" -> cmdInit(commandArgs);
         case "hash-object" -> cmdHashObject(commandArgs);
         case "init" -> cmdInit(commandArgs);
@@ -100,8 +101,35 @@ public class LibWyag {
   }
 
   private static void cmdLsTree(String[] commandArgs) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'cmdLsTree'");
+    Options options = new Options();
+    options.addOption(Option.builder("r").desc("Recursive into subtree").required(false).build());
+
+    CommandLineParser parser = new DefaultParser();
+    HelpFormatter helper = new HelpFormatter();
+
+    try {
+      CommandLine cmd = parser.parse(options, commandArgs);
+
+      // check if -r is selected
+      boolean recursive = cmd.hasOption("r");
+
+      String[] remainingArgs = cmd.getArgs();
+      // get the argument default to HEAD if none specify
+      String treeish = remainingArgs.length > 0 ? remainingArgs[0] : "HEAD";
+
+      GitRepository repo = GitRepository.repoFind();
+
+      lsTree(repo, treeish, recursive);
+
+    } catch (ParseException e) {
+      System.err.println("Error parsing arguments: " + e.getMessage());
+      helper.printHelp("wyag ls-tree [-r] [TREE]", options);
+      System.exit(1);
+    } catch (Exception e) {
+      System.err.println("Error: " + e.getMessage());
+      e.printStackTrace();
+      System.exit(1);
+    }
   }
 
   private static void cmdLsFiles(String[] commandArgs) {
@@ -121,7 +149,7 @@ public class LibWyag {
     // Track which commit we've seen
     Set<String> seen = new HashSet<>();
 
-    logGraphviz(repo, GitObjectUtil.objectFind(repo, startCommit), seen);
+    logGraphviz(repo, GitObjectUtil.objectFind(repo, startCommit, "commit"), seen);
 
     System.out.println("}");
   }
@@ -191,6 +219,39 @@ public class LibWyag {
     } catch (ParseException e) {
       System.err.println("Error parsing arguments: " + e.getMessage());
       helper.printHelp("wyag hash-object [-w] [-t TYPE] FILE", options);
+      System.exit(1);
+    } catch (Exception e) {
+      System.err.println("Error: " + e.getMessage());
+      e.printStackTrace();
+      System.exit(1);
+    }
+  }
+
+  private static void cmdCheckout(String[] commandArgs) {
+    Options options = new Options();
+
+    CommandLineParser parser = new DefaultParser();
+    HelpFormatter helper = new HelpFormatter();
+
+    try {
+      CommandLine cmd = parser.parse(options, commandArgs);
+      String[] remainingArgs = cmd.getArgs();
+
+      if (remainingArgs.length < 2) {
+        System.err.println("Error: missing required arguments");
+        helper.printHelp("wyag checkout <commit-or-tree> <path>", options);
+        System.exit(1);
+      }
+
+      String commitOrTree = remainingArgs[0];
+      String path = remainingArgs[1];
+
+      GitRepository repo = GitRepository.repoFind();
+
+      GitCheckout.checkout(repo, commitOrTree, path);
+    } catch (ParseException e) {
+      System.err.println("Error parsing arguments: " + e.getMessage());
+      helper.printHelp("wyag checkout <commit-or-tree> <path>", options);
       System.exit(1);
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
@@ -303,6 +364,48 @@ public class LibWyag {
     for (String parent : parents) {
       System.out.println(" c_" + sha + " -> c_" + parent + ";");
       logGraphviz(repo, parent, seen);
+    }
+  }
+
+  private static void lsTree(GitRepository repo, String treeish, boolean recursive) {
+    lsTree(repo, treeish, recursive, "");
+  }
+
+  private static void lsTree(GitRepository repo, String treeish, boolean recursive, String prefix) {
+    // Find the tree object
+    String sha = GitObjectUtil.objectFind(repo, treeish, "tree");
+
+    GitObject obj = GitObjectUtil.objectRead(repo, sha);
+    if (!(obj instanceof GitTree)) {
+      throw new RuntimeException("Error not a tree object: " + treeish);
+    }
+    GitTree treeObject = (GitTree) obj;
+
+    for (GitTreeEntry entry : treeObject.getEntries()) {
+      String type;
+      byte[] modeByte = entry.getMode();
+      String mode = new String(modeByte, StandardCharsets.UTF_8);
+
+      if (entry.isTree()) type = "tree";
+      else if (entry.isFile()) type = "blob";
+      else if (entry.isSymLink()) type = "blob";
+      else type = "commit";
+
+      String path;
+      if (prefix.isEmpty()) {
+        path = entry.getPath();
+      } else {
+        path = prefix + "/" + entry.getPath();
+      }
+
+      // Display the entry (unless its recursive and it's a tree)
+      if (!recursive || !entry.isTree()) {
+        System.out.printf("%s %s %s\t%s%n", mode, type, entry.getSha(), path);
+      }
+
+      if (recursive && entry.isTree()) {
+        lsTree(repo, entry.getSha(), recursive, path);
+      }
     }
   }
 }

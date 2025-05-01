@@ -10,7 +10,6 @@ import java.util.Arrays;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
-import org.apache.commons.cli.*;
 
 public class GitObjectUtil {
 
@@ -37,12 +36,15 @@ public class GitObjectUtil {
     byte[] data = object.serialize();
 
     // Format: <type> <size>/0<content>
-    String header = object.getType() + " " + data.length + "/0";
+    String header = object.getType() + " " + data.length;
     byte[] headerBytes = header.getBytes();
 
-    byte[] result = new byte[headerBytes.length + data.length];
+    byte[] result = new byte[headerBytes.length + 1 + data.length];
+    // we now add the header part: <type> <size>
     System.arraycopy(headerBytes, 0, result, 0, headerBytes.length);
-    System.arraycopy(data, 0, result, headerBytes.length, data.length);
+    result[headerBytes.length] = 0; // now we add the null "/0" byte
+    // and finally the content
+    System.arraycopy(data, 0, result, headerBytes.length + 1, data.length);
 
     // compute the hash after we have the header + content
     String sha = computeSha1(result);
@@ -138,17 +140,27 @@ public class GitObjectUtil {
 
   private static ObjectInfo parseHeader(byte[] rawData) {
     // find the white space between the type and size
-    int whiteSpacePos = 0;
-    while (rawData[whiteSpacePos] != ' ') {
-      whiteSpacePos++;
+    int whiteSpacePos = findNextByte(rawData, (byte) ' ', 0);
+    // while (rawData[whiteSpacePos] != (byte) ' ' && whiteSpacePos < rawData.length) {
+    //   whiteSpacePos++;
+    // }
+
+    if (whiteSpacePos >= rawData.length) {
+      throw new RuntimeException("Malformed object: no separator found");
     }
+
     // Extract the type
     String type = new String(Arrays.copyOfRange(rawData, 0, whiteSpacePos));
 
     // Find the size between type and null char
-    int nullPos = whiteSpacePos + 1;
-    while (rawData[nullPos] != 0) {
-      nullPos++;
+    // int nullPos = whiteSpacePos + 1;
+    // while (rawData[nullPos] != 0 && nullPos < rawData.length) {
+    //   nullPos++;
+    // }
+    int nullPos = findNextByte(rawData, (byte) 0, whiteSpacePos + 1);
+
+    if (nullPos >= rawData.length) {
+      throw new IllegalArgumentException("Malformed object: no null terminator found");
     }
 
     // Extract the size
@@ -161,7 +173,7 @@ public class GitObjectUtil {
     // Validate that content size matches the specify size
     if (content.length != size) {
       throw new IllegalStateException(
-          "Object size mismatch: Expected " + size + " but got " + content.length);
+          "Object size mismatch: Expected " + content.length + " but got " + size);
     }
     return new ObjectInfo(type, content);
   }
@@ -174,15 +186,24 @@ public class GitObjectUtil {
         return new GitCommit(data);
       case "tree":
         return new GitTree(data);
-      case "tag":
-        return new GitTag(data);
+      // case "tag":
+      //   return new GitTag(data);
       default:
         throw new IllegalArgumentException("Unknown object type: " + type);
     }
   }
 
   // TODO: implement the rest of the method
-  public static String objectFind(GitRepository repo, String name) {
+  public static String objectFind(GitRepository repo, String name, String type) {
     return name;
+  }
+
+  private static int findNextByte(byte[] raw, byte target, int position) {
+    for (int i = position; i < raw.length; i++) {
+      if (raw[i] == target) {
+        return i;
+      }
+    }
+    return -1;
   }
 }

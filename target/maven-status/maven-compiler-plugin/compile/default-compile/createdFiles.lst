@@ -1,2 +1,9 @@
-com\GitRemake\LibWyag.class
+com\GitRemake\GitCommit.class
+com\GitRemake\GitObjectUtil.class
 com\GitRemake\GitRepository.class
+com\GitRemake\GitBlob.class
+com\GitRemake\LibWyag.class
+com\GitRemake\GitTree.class
+com\GitRemake\GitObject.class
+com\GitRemake\ObjectInfo.class
+com\GitRemake\GitTreeEntry.class
