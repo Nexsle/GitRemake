@@ -69,7 +69,7 @@ public class GitRepository {
     return result.toString();
   }
 
-  private String repoDir(boolean mkdir, String... paths) {
+  public String repoDir(boolean mkdir, String... paths) {
     String path = repoPath(paths);
 
     File dirPath = new File(path);
