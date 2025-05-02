@@ -4,9 +4,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
@@ -186,8 +191,8 @@ public class GitObjectUtil {
         return new GitCommit(data);
       case "tree":
         return new GitTree(data);
-      // case "tag":
-      //   return new GitTag(data);
+      case "tag":
+        return new GitTag(data);
       default:
         throw new IllegalArgumentException("Unknown object type: " + type);
     }
@@ -195,7 +200,81 @@ public class GitObjectUtil {
 
   // TODO: implement the rest of the method
   public static String objectFind(GitRepository repo, String name, String type) {
-    return name;
+    if (name.equals("HEAD")) {
+      try {
+        return GitRefUtil.refResolve(repo, "HEAD");
+      } catch (IOException e) {
+        return null;
+      }
+    }
+
+    // check if name is a full hash
+    // if so just return name
+    if (name.matches("[0-9a-f]{40}")) return name;
+
+    // check if abbrerviated hash (atleast 4 hex char)
+    if (name.matches("[0-9a-f]{4,39}")) {
+      // try to find the object with the prefix
+      String prefix = name.substring(0, 2);
+      String subfix = name.substring(2);
+
+      try {
+        String dirPath = repo.repoDir(false, "objects/" + prefix);
+        Path objectDir = Paths.get(dirPath);
+        if (Files.exists(objectDir)) {
+          try (Stream<Path> path = Files.list(objectDir)) {
+            List<String> matches =
+                path.map(p -> p.getFileName().toString())
+                    .filter(f -> f.startsWith(subfix))
+                    .map(f -> prefix + f)
+                    .collect(Collectors.toList());
+
+            if (matches.size() == 1) {
+              return matches.get(0);
+            } else if (matches.size() > 1) {
+              throw new IOException("Ambiguous has prefix: " + name);
+            }
+          }
+        }
+
+      } catch (IOException e) {
+        return null;
+      }
+    }
+    // THIS IS FOR WHEN USE ENTER A STRING (reach when not a hash)
+    // Ex: git show main
+    // Check if it's a tag
+    try {
+      String tagRef = GitRefUtil.refResolve(repo, "refs/tags/" + name);
+      if (tagRef != null) {
+        return tagRef;
+      }
+    } catch (IOException e) {
+      // Ignore and continue
+    }
+
+    // Check if it's a branch
+    try {
+      String branchRef = GitRefUtil.refResolve(repo, "refs/heads/" + name);
+      if (branchRef != null) {
+        return branchRef;
+      }
+    } catch (IOException e) {
+      // Ignore and continue
+    }
+
+    // Check if it's a remote branch
+    try {
+      String remoteRef = GitRefUtil.refResolve(repo, "refs/remotes/" + name);
+      if (remoteRef != null) {
+        return remoteRef;
+      }
+    } catch (IOException e) {
+      // Ignore and continue
+    }
+
+    // If we get here, we couldn't find the object
+    return null;
   }
 
   private static int findNextByte(byte[] raw, byte target, int position) {
